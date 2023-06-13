@@ -1,6 +1,11 @@
 import { Component, OnInit } from '@angular/core';
+import {HttpClient} from '@angular/common/http'
+import { interval } from 'rxjs';
+import { take } from 'rxjs/operators';
+import * as L from 'leaflet'
 
 interface User{
+  id?: number;
   name: string;
   latitude: number | null;
   longitude: number | null;
@@ -20,22 +25,55 @@ export class TrackingComponent implements OnInit {
     { name: 'User 5', latitude: null, longitude: null }
   ];
 
-  constructor() { }
+  apiUrl = 'http://localhost:3000/users'
+  map: L.Map | null = null
+
+  constructor(private http: HttpClient) { }
 
   ngOnInit() {
-    this.getUsersLocation();
-
+    this.createMap()
+    this.users.forEach((user) => {
+      this.getUsersLocation(user);
+    })
+    this.updateUserLocationsPeriodically()
   }
 
-  getUsersLocation() {
-    this.users.forEach((user: User, index: number) => {
+  createMap(){
+    this.map = L.map('map').setView([0, 0], 2);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: 'Map data © <a href="https://openstreetmap.org">OpenStreetMap</a> contributors',
+      maxZoom:18
+    }).addTo(this.map)
+  }
+
+  getUsersLocation(user: User) {
       const watchId = navigator.geolocation.watchPosition((position) => {
         const { latitude, longitude } = position.coords;
-        this.users[index].latitude = latitude;
-        this.users[index].longitude = longitude;
+        user.latitude = latitude;
+        user.longitude = longitude;
+        this.saveUserLocation(user);
         this.displayUserLocations();
+        this.updateUserMarker(user);
       });
-    });
+  }
+
+
+  saveUserLocation(user: User){
+    if(user.latitude && user.longitude){
+      this.http.post<User>(this.apiUrl, user).subscribe((response)=>{
+        user.id = response.id
+      })
+    }
+  }
+
+  updateUserLocationsPeriodically(){
+    setInterval(()=>{
+      this.users.forEach((user) => {
+        if(user.latitude && user.longitude){
+          this.http.put<User>(`${this.apiUrl}/${user.id}`, user).subscribe()
+        }
+      })
+    }, 300000)
   }
 
   displayUserLocations() {
@@ -43,13 +81,20 @@ export class TrackingComponent implements OnInit {
     this.users.forEach((user, index) => {
       if (typeof user.latitude !== null && user.longitude !== null) {
         let mapUrl = `https://maps.google.com/maps?q=${user.latitude},${user.longitude}&output=embed`;
-        html += `<br>${user.name}: Latitude=${user.latitude}, Longitude=${user.longitude}<br><iframe width="700" height="300" src=${mapUrl}></iframe><br>`;
+        html += `<br>${user.name}: Latitude=${user.latitude}, Longitude=${user.longitude}`;
       } else {
         html += `<br>${user.name}: Latitude and longitude not available<br>`;
       }
     });
     let details = document.getElementById('details')
     details && (details.innerHTML = html);
+  }
+
+  updateUserMarker(user: User){
+    if(user.latitude && user.longitude){
+      let marker = L.marker([user.latitude, user.longitude]).addTo(this.map!)
+      marker.bindPopup(user.name)
+    }
   }
 
 }
